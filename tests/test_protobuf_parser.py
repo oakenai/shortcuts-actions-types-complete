@@ -76,6 +76,26 @@ class TestSanitizeExtractedString:
         assert sanitize_extracted_string('?com.apple.generativeassistanttools.GenerativeAssistantExtension') == \
                'com.apple.generativeassistanttools.GenerativeAssistantExtension'
 
+    def test_remove_leading_uppercase_from_bundle_ids(self):
+        """Should remove leading uppercase letter from malformed bundle IDs"""
+        # Bundle IDs with artifacts
+        assert sanitize_extracted_string('Acom.apple.NanoSettings.NPRFSetAutoLaunchAudioAppsIntent.operation') == \
+               'com.apple.NanoSettings.NPRFSetAutoLaunchAudioAppsIntent.operation'
+        assert sanitize_extracted_string('Iis.workflow.actions.setters.reminders.WFReminderContentItemParentReminder') == \
+               'is.workflow.actions.setters.reminders.WFReminderContentItemParentReminder'
+        assert sanitize_extracted_string('Jcom.apple.UniversalAccess.UASettingsShortcuts') == \
+               'com.apple.UniversalAccess.UASettingsShortcuts'
+
+    def test_keep_valid_entity_names_with_dots(self):
+        """Should preserve valid entity names even if they contain dots"""
+        # These look like the pattern but are valid entity names
+        assert sanitize_extracted_string('ContactEntity.WFCompoundType') == \
+               'ContactEntity.WFCompoundType'
+        assert sanitize_extracted_string('BookmarkEntity.WFContentItemSortProperty') == \
+               'BookmarkEntity.WFContentItemSortProperty'
+        assert sanitize_extracted_string('Attribute.currentHumidity') == \
+               'Attribute.currentHumidity'
+
     def test_keep_valid_bundle_ids(self):
         """Should preserve valid bundle IDs"""
         assert sanitize_extracted_string("com.apple.Notes") == "com.apple.Notes"

@@ -43,6 +43,16 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
     while s and s[0] in string.punctuation:
         s = s[1:].strip()
 
+    # Remove leading uppercase letter if it appears to be a bundle ID artifact
+    # Pattern: single uppercase + valid bundle ID starting with com./is./etc.
+    # E.g., "Acom.apple..." → "com.apple...", "Iis.workflow..." → "is.workflow..."
+    # But keep valid entity names like "ContactEntity.WFCompoundType"
+    if s and len(s) > 4 and s[0].isupper() and s[1].islower():
+        # Check if removing first char reveals a bundle ID pattern
+        rest = s[1:]
+        if rest.startswith('com.') or rest.startswith('is.') or rest.startswith('net.') or rest.startswith('org.'):
+            s = rest.strip()
+
     # Remove trailing artifacts (especially quotes and special chars)
     while s and (s[-1] in artifacts or s.endswith('"') or s.endswith('\'')):
         s = s[:-1].strip()
