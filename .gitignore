@@ -1,0 +1,40 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Generated output files
+output/
+output/*.json
+output/*.csv
+
+# Allow example output to be committed
+!example-output/
+!example-output/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQLite temp files
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite.lock
+*.sqlite
+utils/__init__.py
