@@ -46,6 +46,36 @@ class TestSanitizeExtractedString:
         assert sanitize_extracted_string('-com.agiletortoise.Drafts4.addto.DraftsAddMode') == \
                'com.agiletortoise.Drafts4.addto.DraftsAddMode'
 
+    def test_remove_leading_punctuation(self):
+        """Should remove leading punctuation marks (protobuf field markers)"""
+        # Dot
+        assert sanitize_extracted_string('.UIIntelligenceIntents.IntelligenceCommandQuery') == \
+               'UIIntelligenceIntents.IntelligenceCommandQuery'
+        # Exclamation
+        assert sanitize_extracted_string('!ContactsUICore.ContactEntityQuery') == \
+               'ContactsUICore.ContactEntityQuery'
+        # Plus
+        assert sanitize_extracted_string('+com.apple.AddressBook.ViewContactCardIntent') == \
+               'com.apple.AddressBook.ViewContactCardIntent'
+        # Comma
+        assert sanitize_extracted_string(',com.apple.AppKit.WritingToolsProofreadIntent') == \
+               'com.apple.AppKit.WritingToolsProofreadIntent'
+        # Slash
+        assert sanitize_extracted_string('/com.apple.Home.ToggleControlConfigurationIntent') == \
+               'com.apple.Home.ToggleControlConfigurationIntent'
+        # Colon
+        assert sanitize_extracted_string(':com.apple.NanoSettings.NPRFSetWakeOnWristRaiseIntent.state') == \
+               'com.apple.NanoSettings.NPRFSetWakeOnWristRaiseIntent.state'
+        # Semicolon
+        assert sanitize_extracted_string(';com.apple.Photos.PhotosRemoveAssetsFromAlbumAssistantIntent') == \
+               'com.apple.Photos.PhotosRemoveAssetsFromAlbumAssistantIntent'
+        # Equals
+        assert sanitize_extracted_string('=com.apple.NanoSettings.NPRFSetAutoLaunchAudioAppsIntent.state') == \
+               'com.apple.NanoSettings.NPRFSetAutoLaunchAudioAppsIntent.state'
+        # Question mark
+        assert sanitize_extracted_string('?com.apple.generativeassistanttools.GenerativeAssistantExtension') == \
+               'com.apple.generativeassistanttools.GenerativeAssistantExtension'
+
     def test_keep_valid_bundle_ids(self):
         """Should preserve valid bundle IDs"""
         assert sanitize_extracted_string("com.apple.Notes") == "com.apple.Notes"
@@ -91,6 +121,13 @@ class TestSanitizeExtractedString:
         """Should filter strings that are mostly artifacts"""
         # String that becomes much shorter after cleaning (>50% reduction)
         assert sanitize_extracted_string('**********abc') is None
+
+    def test_filter_protobuf_markers(self):
+        """Should filter protobuf structure markers (X*Y pattern)"""
+        assert sanitize_extracted_string('C*A') is None
+        assert sanitize_extracted_string('F*D') is None
+        assert sanitize_extracted_string('t*r') is None
+        assert sanitize_extracted_string('Z*X') is None
 
     def test_preserve_colons_in_bundle_ids(self):
         """Should handle colons in context"""

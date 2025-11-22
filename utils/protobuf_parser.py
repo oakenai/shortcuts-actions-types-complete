@@ -37,6 +37,12 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
     while s and s[0] in artifacts:
         s = s[1:].strip()
 
+    # Remove leading punctuation (protobuf field markers like !, +, ,, ., /, :, ;, =, ?, etc.)
+    # Keep stripping until we hit an alphanumeric or underscore character
+    import string
+    while s and s[0] in string.punctuation:
+        s = s[1:].strip()
+
     # Remove trailing artifacts (especially quotes and special chars)
     while s and (s[-1] in artifacts or s.endswith('"') or s.endswith('\'')):
         s = s[:-1].strip()
@@ -52,6 +58,7 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
         r'^["\']',               # Starts with quote
         r'["\'][^"\']*["\']$',   # Ends with quote after some chars
         r'^\W+$',                # Only non-word characters
+        r'^.\*.$',               # Protobuf structure markers like C*A, F*D (single char + * + single char)
     ]
 
     for pattern in suspicious_patterns:
