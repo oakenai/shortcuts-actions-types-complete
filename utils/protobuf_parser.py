@@ -5,6 +5,66 @@ from typing import Dict, List, Any, Optional, Tuple
 import struct
 
 
+def sanitize_extracted_string(s: str) -> Optional[str]:
+    """
+    Clean up strings extracted from protobuf BLOBs by removing common artifacts.
+
+    Args:
+        s: Extracted string that may contain binary artifacts
+
+    Returns:
+        Cleaned string, or None if the string is invalid/should be filtered
+    """
+    if not s:
+        return None
+
+    # Remove leading/trailing artifacts that are common binary markers
+    # These bytes are printable ASCII but not part of actual strings
+    artifacts = ['(', ')', '[', ']', '{', '}', '<', '>', '$', '*', '&', '|', '^', '~', '`', '-', '#', '%', '@']
+
+    # Strip common binary delimiters from start/end
+    original = s
+    s = s.strip()
+
+    # Remove leading single digits or numbers followed by non-alphanumeric
+    # These are length prefixes or field markers (e.g., "2com.apple..." or "1com.apple...")
+    if s and len(s) > 3:
+        # Remove single leading digit
+        if s[0].isdigit() and not s[1].isdigit():
+            s = s[1:].strip()
+
+    # Remove leading artifacts
+    while s and s[0] in artifacts:
+        s = s[1:].strip()
+
+    # Remove trailing artifacts (especially quotes and special chars)
+    while s and (s[-1] in artifacts or s.endswith('"') or s.endswith('\'')):
+        s = s[:-1].strip()
+
+    # Filter out strings that are mostly hex/random garbage
+    # Valid strings should have mostly alphanumeric or dots/dashes
+    if len(s) < 3:
+        return None
+
+    # Check for suspicious patterns that indicate binary corruption
+    suspicious_patterns = [
+        r'^\d+["\']$',           # Just numbers followed by quote (e.g., "2:")
+        r'^["\']',               # Starts with quote
+        r'["\'][^"\']*["\']$',   # Ends with quote after some chars
+        r'^\W+$',                # Only non-word characters
+    ]
+
+    for pattern in suspicious_patterns:
+        if re.match(pattern, s):
+            return None
+
+    # If we stripped too much (>50% of original), it was mostly artifacts
+    if len(s) < len(original) * 0.5 and len(original) > 10:
+        return None
+
+    return s if s else None
+
+
 def extract_strings_from_blob(blob: bytes, min_length: int = 3) -> List[str]:
     """
     Extract ASCII/UTF-8 strings from a protobuf BLOB.
@@ -22,10 +82,12 @@ def extract_strings_from_blob(blob: bytes, min_length: int = 3) -> List[str]:
 
     strings = []
 
+    raw_strings = []
+
     # Pattern 1: ASCII printable strings
     ascii_pattern = rb'[\x20-\x7e]{' + str(min_length).encode() + rb',}'
     for match in re.finditer(ascii_pattern, blob):
-        strings.append(match.group().decode('ascii'))
+        raw_strings.append(match.group().decode('ascii'))
 
     # Pattern 2: UTF-8 strings (more permissive)
     try:
@@ -44,15 +106,21 @@ def extract_strings_from_blob(blob: bytes, min_length: int = 3) -> List[str]:
                         try:
                             s = blob[string_start:string_end].decode('utf-8', errors='ignore')
                             if s.isprintable() and len(s) >= min_length:
-                                if s not in strings:  # Avoid duplicates
-                                    strings.append(s)
+                                if s not in raw_strings:  # Avoid duplicates
+                                    raw_strings.append(s)
                         except:
                             pass
             i += 1
     except:
         pass
 
-    return list(set(strings))  # Remove duplicates
+    # Sanitize all extracted strings
+    for s in raw_strings:
+        cleaned = sanitize_extracted_string(s)
+        if cleaned and cleaned not in strings:
+            strings.append(cleaned)
+
+    return strings
 
 
 def decode_varint(data: bytes) -> Tuple[int, int]:

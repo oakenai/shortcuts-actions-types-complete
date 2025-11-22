@@ -335,6 +335,15 @@ strings = param["type_info"]["strings"]
 # field_X_bytes → raw protobuf data for potential future decoding
 ```
 
+**String sanitization:**
+
+The toolkit automatically cleans extracted strings to remove binary artifacts:
+- ✅ **Removes**: Leading/trailing `(`, `)`, `$`, `*`, `"` and other binary markers
+- ✅ **Keeps**: Valid bundle IDs, entity names, UUIDs, queries, and human-readable text
+- ✅ **Filters**: Garbage strings like `2:"`, `*`, or very short corrupted fragments
+
+Example: `"(com.apple.Notes*"` → `"com.apple.Notes"`
+
 The toolkit extracts ~60% of useful type information without needing Apple's schema definitions, using [protobuf wire format parsing](https://protobuf.dev/programming-guides/encoding/).
 
 ## 📁 Example Output
