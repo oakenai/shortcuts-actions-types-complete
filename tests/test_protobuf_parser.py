@@ -19,7 +19,8 @@ class TestSanitizeExtractedString:
 
     def test_remove_trailing_quote(self):
         """Should remove trailing quotes and special chars"""
-        assert sanitize_extracted_string('com.apple.Notes28"') == "com.apple.Notes28"
+        # Note: 28 (2+ digits) gets stripped as protobuf artifact
+        assert sanitize_extracted_string('com.apple.Notes28"') == "com.apple.Notes"
         assert sanitize_extracted_string('com.apple.Notes2:"') == "com.apple.Notes2:"
 
     def test_remove_leading_dollar(self):
@@ -148,6 +149,90 @@ class TestSanitizeExtractedString:
         assert sanitize_extracted_string('F*D') is None
         assert sanitize_extracted_string('t*r') is None
         assert sanitize_extracted_string('Z*X') is None
+
+    def test_filter_binary_plist_headers(self):
+        """Should filter binary plist headers"""
+        assert sanitize_extracted_string('bplist00') is None
+        assert sanitize_extracted_string('bplist16') is None
+
+    def test_remove_trailing_quote_digit(self):
+        """Should remove trailing quote+digit patterns"""
+        assert sanitize_extracted_string('CD9EA095-EF88-42FB-88BA-F26505BB34D4"2') == \
+               'CD9EA095-EF88-42FB-88BA-F26505BB34D4'
+        # Note: Leading 1 gets stripped as it's a single digit prefix
+        assert sanitize_extracted_string("A880370-7077-425C-9143-619275A94CF3'3") == \
+               'A880370-7077-425C-9143-619275A94CF3'
+
+    def test_remove_trailing_quote_plus(self):
+        """Should remove trailing quote+plus patterns"""
+        assert sanitize_extracted_string('3FA784F2-7EF1-4D06-AE4E-B8AE4888146F"+') == \
+               '3FA784F2-7EF1-4D06-AE4E-B8AE4888146F'
+        assert sanitize_extracted_string('475274B7-B8E1-47D9-86E7-E62EE4D321D5"+') == \
+               '475274B7-B8E1-47D9-86E7-E62EE4D321D5'
+
+    def test_remove_trailing_digits_from_bundle_ids(self):
+        """Should remove trailing 2+ digits from bundle IDs (protobuf artifacts)"""
+        assert sanitize_extracted_string('com.apple.Home29') == 'com.apple.Home'
+        assert sanitize_extracted_string('com.apple.Notes23') == 'com.apple.Notes'
+        assert sanitize_extracted_string('is.workflow.actions23') == 'is.workflow.actions'
+        # But preserve single digit (could be version number like Drafts4)
+        assert sanitize_extracted_string('com.apple.Notes2') == 'com.apple.Notes2'
+
+    def test_remove_trailing_digit_uppercase_from_bundle_ids(self):
+        """Should remove trailing digit+uppercase from bundle IDs"""
+        assert sanitize_extracted_string('com.apple.Home2T') == 'com.apple.Home'
+        assert sanitize_extracted_string('com.apple.AddressBook2B') == 'com.apple.AddressBook'
+        assert sanitize_extracted_string('is.workflow.test3A') == 'is.workflow.test'
+
+    def test_split_concatenated_identifiers(self):
+        """Should split concatenated identifiers on various delimiters"""
+        # Asterisk delimiter
+        assert sanitize_extracted_string('devices* HomeAppIntents.DeviceEntityQuery2') == 'devices'
+        assert sanitize_extracted_string('target*!ContactsUICore.ContactEntityQuery2') == 'target'
+        assert sanitize_extracted_string('forecastLocationEntity*0HomeEnergyWidgetsExtension.ForecastLocationQuery2') == \
+               'forecastLocationEntity'
+        assert sanitize_extracted_string('calendar* CalendarLink.CalendarEntityQuery2') == 'calendar'
+        assert sanitize_extracted_string('PhotosUICore.AlbumEntityQuery2*PhotosRemoveAssetsFromAlbumAssistantIntent') == \
+               'PhotosUICore.AlbumEntityQuery2'
+
+        # Exclamation delimiter
+        assert sanitize_extracted_string('PhotosUICore.AssetEntityQuery2!MoveAssetsToPersonalLibraryIntent') == \
+               'PhotosUICore.AssetEntityQuery2'
+        assert sanitize_extracted_string('PhotosUICore.AlbumEntityQuery2!PhotosDeleteAlbumsAssistantIntent') == \
+               'PhotosUICore.AlbumEntityQuery2'
+
+        # Hash delimiter
+        assert sanitize_extracted_string('representationType#?') == 'representationType'
+        assert sanitize_extracted_string('Notes.VisibleNotesQuery2#SetChecklistItemCheckedLinkActionv2') == \
+               'Notes.VisibleNotesQuery2'
+
+        # Caret delimiter
+        assert sanitize_extracted_string('blueComponent^alphaComponentV$class^greenComponent\\\\redComponent_') == \
+               'blueComponent'
+
+        # Double backslash delimiter (followed by uppercase - realistic pattern)
+        assert sanitize_extracted_string('com.apple.reminders2\\\\Something') == 'com.apple.reminders2'
+
+        # Dollar sign delimiter (when between identifiers)
+        assert sanitize_extracted_string('Freeform.CRLBoardQuery2$CRLChangeBoardObjectConnectorsIntent') == \
+               'Freeform.CRLBoardQuery2'
+        assert sanitize_extracted_string('PhotosUICore.AssetEntityQuery2$PhotosDuplicateAssetsAssistantIntent') == \
+               'PhotosUICore.AssetEntityQuery2'
+        # Multiple delimiters - this type of garbage string gets filtered (result too short)
+        assert sanitize_extracted_string('X$versionY$archiverT$topX$objects') is None
+
+        # Percent delimiter
+        assert sanitize_extracted_string('PhotosUICore.AlbumEntityQuery2%PhotosAddAssetsToAlbumAssistantIntent') == \
+               'PhotosUICore.AlbumEntityQuery2'
+
+        # Single letter + delimiter (should filter as garbage after split)
+        assert sanitize_extracted_string('U$null') is None  # U is too short after split
+
+    def test_preserve_dollar_signs_in_text(self):
+        """Should preserve dollar signs in natural text (not identifiers)"""
+        # Dollar amounts with spaces - these are valid text, not delimiters
+        result = sanitize_extracted_string('tomato soup, $3, $8')
+        assert result == 'tomato soup, $3, $8'  # Preserve because has spaces around $
 
     def test_preserve_colons_in_bundle_ids(self):
         """Should handle colons in context"""

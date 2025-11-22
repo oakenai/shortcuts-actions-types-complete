@@ -28,9 +28,13 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
 
     # Remove leading single digits or numbers followed by non-alphanumeric
     # These are length prefixes or field markers (e.g., "2com.apple..." or "1com.apple...")
+    # But DON'T remove from UUIDs or other valid numeric strings
     if s and len(s) > 3:
-        # Remove single leading digit
-        if s[0].isdigit() and not s[1].isdigit():
+        # Check if this looks like a UUID (has dashes in UUID positions)
+        # UUIDs: 8-4-4-4-12 format, at least 36 chars, multiple dashes
+        is_uuid_like = s.count('-') >= 3 and len(s) >= 36
+        # Remove single leading digit only if not UUID-like
+        if not is_uuid_like and s[0].isdigit() and not s[1].isdigit():
             s = s[1:].strip()
 
     # Remove leading artifacts
@@ -57,18 +61,30 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
     while s and (s[-1] in artifacts or s.endswith('"') or s.endswith('\'')):
         s = s[:-1].strip()
 
-    # Filter out strings that are mostly hex/random garbage
-    # Valid strings should have mostly alphanumeric or dots/dashes
-    if len(s) < 3:
-        return None
+    # Remove trailing quote+digit pattern (e.g., UUID"2 or ID'3)
+    s = re.sub(r'["\']\d+$', '', s).strip()
 
-    # Check for suspicious patterns that indicate binary corruption
+    # Remove trailing quote+plus pattern (e.g., UUID"+ or ID'+)
+    s = re.sub(r'["\'][+]+$', '', s).strip()
+
+    # Remove trailing digit+uppercase pattern from bundle IDs (e.g., com.apple.Home2T → com.apple.Home)
+    # But ONLY if followed by uppercase (otherwise "Drafts4" would become "Drafts")
+    if re.match(r'^(com|is|net|org)\.', s):
+        # Remove digit+uppercase combo (2T, 3A, etc)
+        s = re.sub(r'\d+[A-Z]$', '', s).strip()
+        # Remove trailing 2-digit numbers (29, 23, etc) but NOT single digits like 4 (could be version)
+        # Only strip if it looks like protobuf artifact (multiple digits or uncommon patterns)
+        if re.search(r'\d{2,}$', s):
+            s = re.sub(r'\d{2,}$', '', s).strip()
+
+    # Check for suspicious patterns that indicate binary corruption (before asterisk split)
     suspicious_patterns = [
         r'^\d+["\']$',           # Just numbers followed by quote (e.g., "2:")
         r'^["\']',               # Starts with quote
         r'["\'][^"\']*["\']$',   # Ends with quote after some chars
         r'^\W+$',                # Only non-word characters
         r'^.\*.$',               # Protobuf structure markers like C*A, F*D (single char + * + single char)
+        r'^bplist\d+$',          # Binary plist headers (bplist00, bplist16, etc.)
     ]
 
     for pattern in suspicious_patterns:
@@ -76,7 +92,43 @@ def sanitize_extracted_string(s: str) -> Optional[str]:
             return None
 
     # If we stripped too much (>50% of original), it was mostly artifacts
+    # Do this check BEFORE splitting on asterisk (which is intentional data extraction, not artifact removal)
     if len(s) < len(original) * 0.5 and len(original) > 10:
+        return None
+
+    # Split on delimiter characters that appear between identifiers
+    # Pattern: word*nextWord, word!nextWord, word#nextWord, word$nextWord, etc.
+    # Keep only the first part before the delimiter
+    # Do this AFTER the 50% check so we don't penalize legitimate splitting
+    # Delimiters: * ! # ^ \\ $ % (these are protobuf field concatenation markers)
+    for delimiter in ['*', '!', '#', '^', '\\\\', '$', '%']:
+        if delimiter in s:
+            # Check if this looks like concatenated identifiers (not natural text)
+            # Heuristic:
+            # 1. Identifier-like pattern before delimiter (CamelCase, dot.notation, digit+delimiter)
+            # 2. Identifier-like pattern after delimiter (uppercase letter starting new word)
+            # 3. NOT surrounded by spaces (which would be valid text like "soup, $3")
+
+            # Match patterns like: Query2$Intent, word.notation$NextWord, CamelCase$NextWord, devices* Word, U$null
+            # Pattern 1: identifier + delimiter + (any non-space character that suggests concatenation)
+            # This includes: uppercase, digit, punctuation, or another word starting a new identifier
+            # We want to split on: word$next, word*next, word!Next, U$null, etc.
+            # But preserve: "text, $3, $8" (spaces around delimiter)
+            if re.search(r'([A-Z][a-z]+[A-Z]|[a-z]+\.[A-Z]|\d|[a-z]+|[A-Z])' + re.escape(delimiter) + r'[\s]*\S', s):
+                # Additional check: make sure it's not just "word$ " (delimiter at end with only whitespace after)
+                if not re.search(r'([A-Z][a-z]+[A-Z]|[a-z]+\.[A-Z]|\d|[a-z]+|[A-Z])' + re.escape(delimiter) + r'\s*$', s):
+                    s = s.split(delimiter)[0].strip()
+                    break
+            # Pattern 2: Multiple delimiters WITHOUT proper spacing (like X$versionY$archiver)
+            # But NOT with spaces like ", $3, $8" which is valid text
+            elif s.count(delimiter) >= 2:
+                # Check if any delimiter has a letter/digit immediately before AND after (no spaces)
+                if re.search(r'[A-Za-z0-9]' + re.escape(delimiter) + r'[A-Za-z0-9]', s):
+                    s = s.split(delimiter)[0].strip()
+                    break
+
+    # Final length check
+    if len(s) < 3:
         return None
 
     return s if s else None
